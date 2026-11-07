@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FLPIT Clienti</title>
+<meta name="theme-color" content="#0c0c0d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FLPIT Clienti">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- Icone (riusate con <use>) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-dafare" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11" /><path d="M3.5 6l1.2 1.2L6.8 5M3.5 12l1.2 1.2L6.8 11M3.5 18l1.2 1.2L6.8 17" /></symbol>
+  <symbol id="i-clienti" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2" /><path d="M3 19c.6-3.2 3-5 6-5s5.4 1.8 6 5" /><path d="M16 5.2a3 3 0 010 5.6M18 14.4c1.6.7 2.6 2.2 3 4.6" /></symbol>
+  <symbol id="i-agenda" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path d="M3.5 10h17M8 3v4M16 3v4" /></symbol>
+  <symbol id="i-dati" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5" /><path d="M4 16v2.5A1.5 1.5 0 005.5 20h13a1.5 1.5 0 001.5-1.5V16" /></symbol>
+  <symbol id="i-piu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+  <symbol id="i-avanti" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" /></symbol>
+  <symbol id="i-indietro" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></symbol>
+  <symbol id="i-spunta" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></symbol>
+</svg>
+
+<!-- ================= PAGINE PRINCIPALI ================= -->
+<main id="principale">
+
+  <section class="pagina" data-pagina="dafare">
+    <header class="testata">
+      <div><h1>Da fare</h1><p class="sottotitolo" id="sub-dafare"></p></div>
+      <button class="btn-tondo" data-nuovo aria-label="Nuovo cliente"><svg><use href="#i-piu"/></svg></button>
+    </header>
+    <div id="dafare"></div>
+  </section>
+
+  <section class="pagina" data-pagina="clienti" hidden>
+    <header class="testata">
+      <div><h1>Clienti</h1><p class="sottotitolo" id="sub-clienti"></p></div>
+      <button class="btn-tondo" data-nuovo aria-label="Nuovo cliente"><svg><use href="#i-piu"/></svg></button>
+    </header>
+    <div class="contenuto">
+      <input id="cerca" class="ricerca" type="search" placeholder="Cerca per nome, città o referente" autocomplete="off">
+      <div class="segmentato" id="filtro-clienti" role="tablist">
+        <button data-filtro="attivi" aria-selected="true">Attivi</button>
+        <button data-filtro="fermi" aria-selected="false">In pausa / Rifiutati</button>
+        <button data-filtro="tutti" aria-selected="false">Tutti</button>
+      </div>
+    </div>
+    <div id="lista-clienti"></div>
+  </section>
+
+  <section class="pagina" data-pagina="agenda" hidden>
+    <header class="testata">
+      <div><h1>Agenda</h1><p class="sottotitolo" id="sub-agenda"></p></div>
+    </header>
+    <div id="agenda"></div>
+  </section>
+
+  <section class="pagina" data-pagina="dati" hidden>
+    <header class="testata">
+      <div><h1>Dati</h1><p class="sottotitolo" id="sub-dati"></p></div>
+    </header>
+    <h3 class="titolo-gruppo">Esporta per Excel</h3>
+    <div class="gruppo">
+      <button class="riga" data-esporta="xlsx"><span class="riga-testo"><span>Excel (.xlsx)</span><small>Due fogli: Clienti e Appuntamenti</small></span><svg class="chev"><use href="#i-avanti"/></svg></button>
+      <button class="riga" data-esporta="csv"><span class="riga-testo"><span>CSV</span><small>Solo i clienti, per Excel in italiano</small></span><svg class="chev"><use href="#i-avanti"/></svg></button>
+    </div>
+    <h3 class="titolo-gruppo">Backup</h3>
+    <div class="gruppo">
+      <button class="riga" data-esporta="json"><span class="riga-testo"><span>Salva backup completo</span><small>File .json con clienti e appuntamenti</small></span><svg class="chev"><use href="#i-avanti"/></svg></button>
+      <button class="riga" id="btn-ripristina"><span class="riga-testo"><span>Ripristina da backup</span><small>Scegli un file .json salvato prima</small></span><svg class="chev"><use href="#i-avanti"/></svg></button>
+    </div>
+    <p class="nota" id="info-dati"></p>
+    <h3 class="titolo-gruppo">Impostazioni <small>solo su questo telefono</small></h3>
+    <div class="gruppo" id="impostazioni">
+      <label class="campo"><span>Referente del fornitore</span><input data-imp="referente" placeholder="Nome usato nell'app e nei messaggi" autocapitalize="words" enterkeyhint="next"></label>
+      <label class="campo"><span>Azienda fornitrice</span><input data-imp="azienda" placeholder="Solo come promemoria" enterkeyhint="next"></label>
+      <label class="campo"><span>Commissione (%)</span><input data-imp="commissione" inputmode="decimal" placeholder="Es. 15" enterkeyhint="next"></label>
+      <label class="campo"><span>Firma dei messaggi</span><input data-imp="firma" placeholder="Il tuo nome, in fondo ai testi copiati" autocapitalize="words" enterkeyhint="done"></label>
+    </div>
+    <p class="nota">Questi dati non sono nel codice dell'app: restano su questo telefono e nel backup.</p>
+    <input id="file-import" type="file" accept=".json,application/json" hidden>
+  </section>
+</main>
+
+<nav class="tabbar" id="tabbar">
+  <button data-vai="dafare" aria-current="page"><svg><use href="#i-dafare"/></svg><span>Da fare</span><b class="pallino-badge" id="badge-dafare" hidden></b></button>
+  <button data-vai="clienti"><svg><use href="#i-clienti"/></svg><span>Clienti</span></button>
+  <button data-vai="agenda"><svg><use href="#i-agenda"/></svg><span>Agenda</span></button>
+  <button data-vai="dati"><svg><use href="#i-dati"/></svg><span>Dati</span></button>
+</nav>
+
+<!-- ================= SCHEDA CLIENTE ================= -->
+<section id="scheda" hidden>
+  <header class="nav">
+    <button id="btn-indietro" class="btn-nav"><svg><use href="#i-indietro"/></svg><span id="testo-indietro">Indietro</span></button>
+    <span id="salvataggio" class="salvataggio"></span>
+  </header>
+
+  <div class="scheda-testa">
+    <h2 id="s-nome">Nuovo cliente</h2>
+    <p id="s-sotto" class="sottotitolo"></p>
+    <ol id="percorso" class="percorso" aria-label="Stato del cliente"></ol>
+    <div class="riga-stato">
+      <span id="s-stato" class="testo-stato"></span>
+      <button type="button" id="btn-ferma" class="btn-link">Ferma trattativa</button>
+    </div>
+  </div>
+
+  <div class="segmentato schede" role="tablist">
+    <button data-tab="cliente" aria-selected="true">Cliente</button>
+    <button data-tab="appuntamenti" aria-selected="false">Appuntamenti</button>
+    <button data-tab="fornitore" aria-selected="false">Fornitore</button>
+  </div>
+
+  <form id="form" autocomplete="off" onsubmit="return false">
+
+    <!-- CLIENTE -->
+    <div data-pannello="cliente">
+      <h3 class="titolo-gruppo">Locale e contatto</h3>
+      <div class="gruppo">
+        <label class="campo"><span>Nome del locale</span><input name="nomeLocale" placeholder="Obbligatorio" enterkeyhint="next"><em class="avviso-campo" data-per="nomeLocale"></em></label>
+        <label class="campo"><span>Città</span><input name="citta" list="elenco-citta" autocapitalize="words" enterkeyhint="next"><datalist id="elenco-citta"></datalist><em class="avviso-campo" data-per="citta"></em></label>
+        <label class="campo"><span>Referente</span><input name="referente" autocapitalize="words" enterkeyhint="next"><em class="avviso-campo" data-per="referente"></em></label>
+        <label class="campo"><span>Telefono</span><input name="telefono" type="tel" inputmode="tel" enterkeyhint="next"><em class="avviso-campo" data-per="telefono"></em></label>
+        <label class="campo"><span>Email</span><input name="email" type="email" inputmode="email" autocapitalize="off" enterkeyhint="next"><em class="avviso-campo" data-per="email"></em></label>
+      </div>
+
+      <h3 class="titolo-gruppo">Dati per la fattura <small>servono quando conferma l'ordine</small></h3>
+      <div class="gruppo">
+        <label class="campo"><span>Ragione sociale</span><input name="ragioneSociale" enterkeyhint="next"><em class="avviso-campo" data-per="ragioneSociale"></em></label>
+        <label class="campo"><span>Partita IVA</span><input name="partitaIva" inputmode="numeric" enterkeyhint="next"><em class="avviso-campo" data-per="partitaIva"></em></label>
+        <label class="campo"><span>Sede legale / fatturazione</span><textarea name="indirizzoFatturazione" rows="2"></textarea><em class="avviso-campo" data-per="indirizzoFatturazione"></em></label>
+      </div>
+
+      <h3 class="titolo-gruppo con-azione">Consegna <button type="button" id="btn-copia-sede" class="btn-link">Uguale alla sede</button></h3>
+      <div class="gruppo">
+        <label class="campo"><span>Indirizzo di consegna</span><textarea name="indirizzoConsegna" rows="2"></textarea><em class="avviso-campo" data-per="indirizzoConsegna"></em></label>
+        <label class="campo"><span>Destinatario</span><input name="destinatarioConsegna" enterkeyhint="next"></label>
+        <label class="campo"><span>Telefono per la consegna</span><input name="telefonoConsegna" type="tel" inputmode="tel" enterkeyhint="done"><em class="avviso-campo" data-per="telefonoConsegna"></em></label>
+      </div>
+
+      <h3 class="titolo-gruppo">Interesse</h3>
+      <div class="gruppo">
+        <div class="campo"><span>Bundle (lampade, stazione inclusa)</span>
+          <div class="scelte" data-campo="bundle">
+            <button type="button" data-valore="10">10</button><button type="button" data-valore="15">15</button>
+            <button type="button" data-valore="20">20</button><button type="button" data-valore="25">25</button>
+          </div>
+        </div>
+        <div class="campo"><span>Logo personalizzato</span>
+          <div class="scelte" data-campo="logo">
+            <button type="button" data-valore="si">Sì</button><button type="button" data-valore="no">No</button>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="titolo-gruppo">Note</h3>
+      <div class="gruppo">
+        <label class="campo"><textarea name="note" rows="3" placeholder="Persone presenti, obiezioni, orari migliori…"></textarea></label>
+      </div>
+
+      <p id="s-date" class="nota centro"></p>
+      <button type="button" id="btn-elimina" class="btn-link pericolo centro-blocco">Elimina cliente</button>
+    </div>
+
+    <!-- APPUNTAMENTI -->
+    <div data-pannello="appuntamenti" hidden>
+      <button type="button" id="btn-nuovo-app" class="btn-secondario"><svg><use href="#i-piu"/></svg>Nuovo appuntamento</button>
+      <div id="lista-app"></div>
+    </div>
+
+    <!-- FORNITORE (il nome del referente si sceglie in Dati → Impostazioni) -->
+    <div data-pannello="fornitore" hidden>
+      <p class="nota spazio">Solo il lavoro <span data-ref="con {F}">con il fornitore</span><span data-azienda></span>. Manda la registrazione al primo contatto; i dati per la fattura solo quando il cliente conferma l'ordine.</p>
+
+      <h3 class="titolo-gruppo">Registrazione del locale</h3>
+      <div class="gruppo" data-passi="registrazione"></div>
+      <button type="button" class="btn-link azione-gruppo" id="btn-copia-registrazione">Copia la richiesta <span data-ref="per {F}">per il fornitore</span></button>
+
+      <h3 class="titolo-gruppo">Fattura e pagamento</h3>
+      <div class="gruppo" data-passi="fattura"></div>
+      <div class="gruppo">
+        <label class="campo"><span>Numero fattura</span><input name="fornitore.numeroFattura" enterkeyhint="done"></label>
+      </div>
+      <button type="button" class="nota riepilogo" id="riepilogo-fattura"></button>
+      <button type="button" class="btn-link azione-gruppo" id="btn-copia-fattura">Copia i dati per la fattura</button>
+
+      <h3 class="titolo-gruppo" id="titolo-commissione">Commissione</h3>
+      <div class="gruppo" data-passi="commissione"></div>
+      <p class="nota" id="aiuto-commissione"></p>
+
+      <h3 class="titolo-gruppo">Note sul lavoro <span data-ref="con {F}">con il fornitore</span></h3>
+      <div class="gruppo">
+        <label class="campo"><textarea name="fornitore.note" rows="3" placeholder="Risposte ricevute, accordi per questo locale…"></textarea></label>
+      </div>
+      <p class="nota centro">I testi vengono solo copiati: li incolli e li controlli tu in WhatsApp.</p>
+    </div>
+  </form>
+</section>
+
+<!-- Foglio dal basso (stato, appuntamento) -->
+<div id="foglio" class="foglio" hidden>
+  <div class="foglio-sfondo" data-chiudi></div>
+  <div class="foglio-pannello" role="dialog" aria-modal="true">
+    <div class="maniglia"></div>
+    <div id="foglio-contenuto"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="xlsx.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
