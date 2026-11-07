@@ -843,6 +843,10 @@
         confirm(`Togliere dall'Agenda ${inProgramma.length === 1 ? 'l\'appuntamento in programma' : `i ${inProgramma.length} appuntamenti in programma`}?\n\n${inProgramma.map(a => `${etichettaApp(c, a)} · ${quando(a)}`).join('\n')}`)) {
       c.appuntamenti = c.appuntamenti.filter(a => a.fatto);
       msg += ` · ${inProgramma.length === 1 ? 'appuntamento tolto' : inProgramma.length + ' appuntamenti tolti'}`;
+      salvaCorrente();
+      toast(msg);
+      proponiCalendario(c, inProgramma, true);
+      return;
     }
     salvaCorrente();
     toast(msg);
@@ -897,7 +901,7 @@
       <button type="button" class="btn-primario" data-azione="salva-app">${a ? 'Salva' : 'Aggiungi'}</button>
       ${proposta ? '<button type="button" class="btn-link centro-blocco" data-chiudi>Non ora</button>' : ''}
       ${a ? `<div class="azioni-foglio">
-        ${!a.fatto && a.data ? '<button type="button" class="btn-link" data-azione="ics">Aggiungi al Calendario</button>' : '<span></span>'}
+        ${!a.fatto && a.data ? `<button type="button" class="btn-link" data-azione="ics">${a.inCalendario ? 'Aggiorna nel Calendario' : 'Aggiungi al Calendario'}</button>` : '<span></span>'}
         <button type="button" class="btn-link pericolo" data-azione="elimina-app">Elimina</button></div>` : ''}`);
     avvisoApp();
   }
@@ -920,8 +924,11 @@
     const c = corrente;
     const dati = { tipo: tipoScelto, data: $('#f-data').value, ora: $('#f-ora').value, note: $('#f-note').value.trim(), fatto: fattoScelto };
     if (!dati.data) { toast('Inserisci la data'); $('#f-data').focus(); return; }
+    const prima = appInModifica ? `${appInModifica.data} ${appInModifica.ora} ${appInModifica.tipo} ${appInModifica.fatto}` : '';
     if (appInModifica) Object.assign(appInModifica, dati);
     else c.appuntamenti.push({ id: nuovoId(), ...dati });
+    const cambiato = appInModifica && appInModifica.inCalendario && prima !== `${dati.data} ${dati.ora} ${dati.tipo} ${dati.fatto}`;
+    const modificato = appInModifica;
     let msg = appInModifica ? 'Appuntamento aggiornato' : 'Appuntamento aggiunto';
     // Automatismo: un appuntamento in programma vuol dire che la trattativa è iniziata.
     if (!dati.fatto && dati.data >= oggiIso() && c.fase === 'contatto' && !c.esito) {
@@ -931,13 +938,18 @@
     chiudiFoglio();
     toast(msg);
     salvaCorrente();
+    if (cambiato && !dati.fatto) proponiCalendario(c, [modificato], false);
   }
 
   // Automatismo: dopo un appuntamento svolto, se non ce ne sono altri, propone di fissare il prossimo.
   const serveProssimo = (c, a) => aperto(c) && c.fase !== 'saldo' && ['incontro', 'telefonata'].includes(a.tipo) && !c.appuntamenti.some(x => !x.fatto);
 
   // File .ics: su iPhone propone «Aggiungi al Calendario».
-  function scaricaIcs(c, a) {
+  // Un'app web non può modificare il Calendario da sola: per togliere o aggiornare un evento si apre un
+  // secondo .ics con lo stesso UID (annullamento o nuova versione), che il Calendario applica all'evento esistente.
+  // per un appuntamento già eliminato il numero (2°, 3°…) non si può più calcolare
+  const etichettaCal = (c, a) => (c.appuntamenti.includes(a) ? etichettaApp(c, a) : TIPO[a.tipo].nome);
+  function eventoIcs(c, a, annulla) {
     const [y, m, d] = a.data.split('-');
     const [hh, mm] = (a.ora || '09:00').split(':');
     const fine = new Date(+y, +m - 1, +d, +hh + 1, +mm);
@@ -945,13 +957,38 @@
     const e = s => String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, z => '\\' + z);
     const descr = [c.referente && `Referente: ${c.referente}`, c.telefono && `Tel: ${c.telefono}`, a.note].filter(Boolean).join('\n');
     const luogo = (c.indirizzoConsegna || c.indirizzoFatturazione || c.citta || '').replace(/\s*\n\s*/g, ', ');
-    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//FLPIT Clienti//IT', 'BEGIN:VEVENT',
+    return ['BEGIN:VEVENT',
       `UID:${a.id}@flpit-clienti`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`,
+      `SEQUENCE:${a.seqCal || 0}`, annulla ? 'STATUS:CANCELLED' : '',
       `DTSTART:${y}${m}${d}T${hh}${mm}00`, `DTEND:${f(fine)}`,
-      `SUMMARY:${e(`FLPIT · ${etichettaApp(c, a)} · ${c.nomeLocale || ''}`)}`,
-      luogo ? `LOCATION:${e(luogo)}` : '', descr ? `DESCRIPTION:${e(descr)}` : '', 'END:VEVENT', 'END:VCALENDAR'
-    ].filter(Boolean).join('\r\n');
-    scarica(new Blob([ics], { type: 'text/calendar;charset=utf-8' }), `FLPIT_${(c.nomeLocale || 'appuntamento').replace(/[^\w]+/g, '_')}.ics`);
+      `SUMMARY:${e(`${annulla ? 'Annullato · ' : ''}FLPIT · ${etichettaCal(c, a)} · ${c.nomeLocale || ''}`)}`,
+      luogo ? `LOCATION:${e(luogo)}` : '', descr ? `DESCRIPTION:${e(descr)}` : '', 'END:VEVENT'].filter(Boolean);
+  }
+  function scaricaCalendario(c, lista, annulla) {
+    lista.forEach(a => { a.seqCal = (a.seqCal || 0) + (a.inCalendario ? 1 : 0); a.inCalendario = !annulla; });
+    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//FLPIT Clienti//IT', `METHOD:${annulla ? 'CANCEL' : 'PUBLISH'}`,
+      ...lista.flatMap(a => eventoIcs(c, a, annulla)), 'END:VCALENDAR'].join('\r\n');
+    tocca(c); salvaTutto();
+    scarica(new Blob([ics], { type: 'text/calendar;charset=utf-8' }),
+      `FLPIT_${annulla ? 'annulla_' : ''}${(c.nomeLocale || 'appuntamento').replace(/[^\w]+/g, '_')}.ics`);
+  }
+  const scaricaIcs = (c, a) => scaricaCalendario(c, [a], false);
+
+  // Dopo un'eliminazione o una modifica: propone di togliere/aggiornare anche nel Calendario dell'iPhone.
+  let perCalendario = null;
+  function proponiCalendario(c, lista, annulla) {
+    lista = lista.filter(a => a.inCalendario && a.data);
+    if (!lista.length) return;
+    perCalendario = { c, lista, annulla };
+    const quali = lista.map(a => `${etichettaCal(c, a)} · ${quando(a)}`).join(', ');
+    apriFoglio(`
+      <h4>${annulla ? 'Togliere anche dal Calendario?' : 'Aggiornare anche il Calendario?'}</h4>
+      <p class="sottotitolo">${esc(quali)}</p>
+      <p class="nota centro">${annulla
+        ? 'Si apre il Calendario dell\'iPhone con l\'evento annullato: conferma lì. Se resta, eliminalo a mano (si chiama «FLPIT · …»).'
+        : 'Si apre il Calendario con la nuova data e ora: conferma lì. Se vedi due eventi, elimina quello vecchio.'}</p>
+      <button type="button" class="btn-primario" data-azione="calendario">${annulla ? 'Togli dal Calendario' : 'Aggiorna nel Calendario'}</button>
+      <button type="button" class="btn-link centro-blocco" data-chiudi>Non ora</button>`);
   }
 
   // ----- foglio generico -----
@@ -1080,23 +1117,24 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
-  async function consegna(blob, nomeFile) {
+  async function consegna(blob, nomeFile, diretto) {
+    if (diretto) { scarica(blob, nomeFile); return true; }
     try {
       const file = new File([blob], nomeFile, { type: blob.type });
       if (matchMedia('(pointer: coarse)').matches && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: nomeFile });
+        await navigator.share({ files: [file] });
         return true;
       }
     } catch (e) { if (e && e.name === 'AbortError') return false; }
     scarica(blob, nomeFile);
     return true;
   }
-  async function esporta(tipo) {
+  async function esporta(tipo, diretto) {
     if (!clienti.length) { toast('Nessun cliente da esportare'); return; }
     const d = new Date();
     const nomeFile = `FLPIT_clienti_${isoData(d)}_${pad(d.getHours())}${pad(d.getMinutes())}.${tipo}`;
     const blob = tipo === 'xlsx' ? creaXlsx() : tipo === 'csv' ? creaCsv() : creaBackup();
-    if (await consegna(blob, nomeFile)) {
+    if (await consegna(blob, nomeFile, diretto)) {
       try { localStorage.setItem(CHIAVE_EXPORT, new Date().toISOString()); } catch (e) {}
       toast(tipo === 'json' ? 'Backup salvato' : `Esportati ${clienti.length} clienti`);
       disegna();
@@ -1151,7 +1189,7 @@
     const va = e.target.closest('[data-vai-a]');
     if (va) vai(va.dataset.vaiA);
     const ex = e.target.closest('[data-esporta]');
-    if (ex) esporta(ex.dataset.esporta);
+    if (ex) esporta(ex.dataset.esporta, ex.hasAttribute('data-diretto'));
   });
 
   $('#btn-ripristina').addEventListener('click', () => $('#file-import').click());
@@ -1273,10 +1311,17 @@
     if (!az) return;
     if (az.dataset.azione === 'salva-app') salvaApp();
     else if (az.dataset.azione === 'ics') scaricaIcs(corrente, appInModifica);
+    else if (az.dataset.azione === 'calendario' && perCalendario) {
+      const { c, lista, annulla } = perCalendario;
+      perCalendario = null; chiudiFoglio();
+      scaricaCalendario(c, lista, annulla);
+    }
     else if (az.dataset.azione === 'elimina-app') {
       if (!confirm('Eliminare questo appuntamento?')) return;
-      corrente.appuntamenti = corrente.appuntamenti.filter(x => x !== appInModifica);
+      const tolto = appInModifica;
+      corrente.appuntamenti = corrente.appuntamenti.filter(x => x !== tolto);
       chiudiFoglio(); salvaCorrente();
+      proponiCalendario(corrente, [tolto], true);
     }
   });
 
