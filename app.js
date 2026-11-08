@@ -92,6 +92,9 @@
      dalle righe dei clienti e dall'export.
      --------------------------------------------------------------------- */
   const aperto = c => !c.esito;
+  // Completato: saldo pagato dal cliente e commissione incassata. Si calcola dallo stato, non si imposta a mano.
+  const completato = c => !c.esito && c.fase === 'saldo' && c.fornitore.commissione === 'pagata';
+  const attivo = c => aperto(c) && !completato(c);
   const tappa = c => FASE[c.fase].n;
   const giorniDa = iso => {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
@@ -256,7 +259,7 @@
   }
   const tocca = c => { c.aggiornato = new Date().toISOString(); };
   const nome = c => c.nomeLocale || 'Senza nome';
-  const nomeStato = c => (c.esito ? ESITO[c.esito].nome : FASE[c.fase].nome);
+  const nomeStato = c => (c.esito ? ESITO[c.esito].nome : completato(c) ? 'Completato' : FASE[c.fase].nome);
   const ICONA = id => `<svg><use href="#i-${id}"/></svg>`;
   const CHEV = '<svg class="chev"><use href="#i-avanti"/></svg>';
 
@@ -370,13 +373,14 @@
      ===================================================================== */
   function disegnaClienti() {
     const q = $('#cerca').value.trim().toLowerCase();
-    const filtro = { attivi: aperto, fermi: c => !!c.esito, tutti: () => true }[filtroClienti];
+    const filtro = { attivi: attivo, completati: completato, fermi: c => !!c.esito, tutti: () => true }[filtroClienti];
     $$('#filtro-clienti [data-filtro]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.filtro === filtroClienti)));
     const elenco = clienti.filter(filtro)
       .filter(c => !q || [c.nomeLocale, c.citta, c.referente, c.ragioneSociale].some(v => (v || '').toLowerCase().includes(q)))
       .sort((a, b) => (b.aggiornato || '').localeCompare(a.aggiornato || ''));
-    const attivi = clienti.filter(aperto).length;
-    $('#sub-clienti').textContent = clienti.length ? `${attivi} attivi su ${clienti.length}` : 'Nessun cliente';
+    const attivi = clienti.filter(attivo).length, fatti = clienti.filter(completato).length;
+    $('#sub-clienti').textContent = clienti.length
+      ? `${attivi} attivi${fatti ? ` · ${fatti} ${fatti === 1 ? 'completato' : 'completati'}` : ''} su ${clienti.length}` : 'Nessun cliente';
     if (!elenco.length) {
       $('#lista-clienti').innerHTML = clienti.length
         ? '<div class="vuoto piccolo">Nessun cliente con questi criteri.</div>'
@@ -384,7 +388,8 @@
       return;
     }
     $('#lista-clienti').innerHTML = `<div class="gruppo">${elenco.map(c => {
-      const p = prossimaCosa(c);
+      const p = prossimaCosa(c) || (completato(c) && c.fornitore.dataCommPagata
+        ? { cls: '', testo: `Commissione incassata il ${dataIt(c.fornitore.dataCommPagata)}` } : null);
       const info = [c.citta, nomeStato(c)].filter(Boolean).join(' · ');
       return `<button class="riga" data-apri="${esc(c.id)}">
         <span class="riga-testo">
@@ -683,8 +688,10 @@
       <button type="button" data-fase="${f.id}" aria-label="${esc(f.nome)}" aria-pressed="${i + 1 === n}"><span class="barra"></span><span class="nome">${esc(f.breve)}</span></button></li>`).join('');
     $('#s-stato').innerHTML = c.esito
       ? `<strong>${esc(ESITO[c.esito].nome)}</strong> · tappa raggiunta: ${esc(FASE[c.fase].nome)}`
+      : completato(c) ? `<strong>Completato</strong> · commissione incassata${c.fornitore.dataCommPagata ? ' il ' + esc(dataIt(c.fornitore.dataCommPagata)) : ''}`
       : `<strong>${esc(FASE[c.fase].nome)}</strong> · ${n} di ${FASI.length}`;
     $('#btn-ferma').textContent = c.esito ? 'Riapri' : 'Ferma trattativa';
+    $('#btn-ferma').hidden = completato(c); // un cliente completato non ha una trattativa da fermare
     disegnaPassi();
     disegnaAppuntamenti();
     aggiornaAvvisi();
@@ -718,7 +725,9 @@
     const c = corrente;
     avvisiScheda();
     riepilogoFattura();
-    $('#aiuto-commissione').textContent = c.fase === 'saldo' && c.fornitore.commissione === 'non_maturata'
+    $('#aiuto-commissione').textContent = completato(c) ? 'Commissione incassata: il cliente è completato.'
+      : c.fornitore.commissione === 'pagata' ? 'Commissione incassata: il cliente sarà completato quando è a «Saldo pagato».'
+      : c.fase === 'saldo' && c.fornitore.commissione === 'non_maturata'
       ? 'Il cliente ha saldato: la commissione è maturata. Spuntala.'
       : 'Matura quando il cliente ha pagato il saldo: allora si spunta da sola.';
     // Il numero fattura serve solo da quando la fattura è arrivata.
@@ -778,6 +787,10 @@
         c.fase = 'ordine'; c.esito = '';
         avviso = 'Cliente passato a «Ordine confermato»';
       }
+    }
+    if (g === 'commissione' && i > idx && conf.passi[i].id === 'pagata') {
+      avviso = completato(c) ? 'Cliente completato: ora è in Clienti › Completati'
+        : 'Commissione incassata: il cliente sarà completato quando è a «Saldo pagato»';
     }
     salvaCorrente();
     if (avviso) toast(avviso);

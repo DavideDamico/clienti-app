@@ -1,5 +1,5 @@
 // Cache dell'app per l'uso offline. Cambia VERSIONE a ogni aggiornamento dei file.
-const VERSIONE = 'flpit-clienti-v10';
+const VERSIONE = 'flpit-clienti-v11';
 const FILE = ['./', 'index.html', 'app.css', 'app.js', 'xlsx.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
