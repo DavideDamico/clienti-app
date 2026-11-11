@@ -22,6 +22,7 @@
   <symbol id="i-clienti" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2" /><path d="M3 19c.6-3.2 3-5 6-5s5.4 1.8 6 5" /><path d="M16 5.2a3 3 0 010 5.6M18 14.4c1.6.7 2.6 2.2 3 4.6" /></symbol>
   <symbol id="i-agenda" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path d="M3.5 10h17M8 3v4M16 3v4" /></symbol>
   <symbol id="i-dati" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5" /><path d="M4 16v2.5A1.5 1.5 0 005.5 20h13a1.5 1.5 0 001.5-1.5V16" /></symbol>
+  <symbol id="i-studio" viewBox="0 0 24 24"><path d="M12 6.5C10.2 5.2 7.6 4.6 4 4.8v13.4c3.6-.2 6.2.4 8 1.7 1.8-1.3 4.4-1.9 8-1.7V4.8c-3.6-.2-6.2.4-8 1.7z" /><path d="M12 6.5v13.4" /></symbol>
   <symbol id="i-piu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
   <symbol id="i-avanti" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" /></symbol>
   <symbol id="i-indietro" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></symbol>
@@ -63,6 +64,13 @@
     <div id="agenda"></div>
   </section>
 
+  <section class="pagina" data-pagina="studio" hidden>
+    <header class="testata" id="testata-studio">
+      <div><h1>Studio</h1><p class="sottotitolo" id="sub-studio"></p></div>
+    </header>
+    <div id="studio"></div>
+  </section>
+
   <section class="pagina" data-pagina="dati" hidden>
     <header class="testata">
       <div><h1>Dati</h1><p class="sottotitolo" id="sub-dati"></p></div>
@@ -80,6 +88,12 @@
       <button class="riga" id="btn-ripristina"><span class="riga-testo"><span>Ripristina da backup</span><small>Scegli un file .json salvato prima</small></span><svg class="chev"><use href="#i-avanti"/></svg></button>
     </div>
     <p class="nota" id="info-dati"></p>
+    <h3 class="titolo-gruppo">Materiale di studio</h3>
+    <div class="gruppo">
+      <button class="riga" id="btn-studio"><span class="riga-testo"><span>Carica materiale di studio</span><small id="info-studio">File .json preparato per te</small></span><svg class="chev"><use href="#i-avanti"/></svg></button>
+    </div>
+    <p class="nota">Il materiale resta solo su questo telefono e nel backup. Caricarne uno nuovo conserva i tuoi progressi.</p>
+    <input id="file-studio" type="file" accept=".json,application/json" hidden>
     <h3 class="titolo-gruppo">Impostazioni <small>solo su questo telefono</small></h3>
     <div class="gruppo" id="impostazioni">
       <label class="campo"><span>Referente del fornitore</span><input data-imp="referente" placeholder="Nome usato nell'app e nei messaggi" autocapitalize="words" enterkeyhint="next"></label>
@@ -96,6 +110,7 @@
   <button data-vai="dafare" aria-current="page"><svg><use href="#i-dafare"/></svg><span>Da fare</span><b class="pallino-badge" id="badge-dafare" hidden></b></button>
   <button data-vai="clienti"><svg><use href="#i-clienti"/></svg><span>Clienti</span></button>
   <button data-vai="agenda"><svg><use href="#i-agenda"/></svg><span>Agenda</span></button>
+  <button data-vai="studio"><svg><use href="#i-studio"/></svg><span>Studio</span></button>
   <button data-vai="dati"><svg><use href="#i-dati"/></svg><span>Dati</span></button>
 </nav>
 

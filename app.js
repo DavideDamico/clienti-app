@@ -304,6 +304,7 @@
     if (pagina === 'dafare') disegnaDaFare();
     else if (pagina === 'clienti') disegnaClienti();
     else if (pagina === 'agenda') disegnaAgenda();
+    else if (pagina === 'studio') disegnaStudio();
     else disegnaDati();
   }
 
@@ -358,6 +359,8 @@
     let html = '';
     const backup = bisognoBackup();
     if (backup) html += `<div class="gruppo"><button class="riga" data-vai-a="dati"><span class="riga-testo"><span>Fai un backup</span><small>${esc(backup)}</small></span>${CHEV}</button></div>`;
+    const ripasso = promemoriaStudio();
+    if (ripasso) html += `<div class="gruppo"><button class="riga" data-vai-a="studio"><span class="riga-testo"><span>Ripassa prima delle visite</span><small>${esc(ripasso)}</small></span>${CHEV}</button></div>`;
     sez.forEach(s => { html += `<h3 class="titolo-gruppo ${s.cls || ''}">${esc(s.titolo)} · ${s.voci.length}</h3>${righe(s.voci)}`; });
     if (!clienti.length) {
       html += `<div class="vuoto">${ICONA('clienti')}<strong>Nessun cliente</strong>Tocca + per inserire il primo locale.</div>`;
@@ -445,6 +448,204 @@
   }
 
   /* =====================================================================
+     STUDIO — materiale da ripassare prima delle visite.
+     Il contenuto arriva da un file .json caricato in Dati: non è nel codice,
+     resta solo su questo telefono (e nel backup), come le Impostazioni.
+     Formato: { tipo: 'studio', titolo, aggiornato, argomenti: [{ id, titolo, intro, schede: [{ id, titolo, domanda, testo }] }],
+                checklist: [{ id, testo }] }
+     Nel testo: righe «- » = elenco, righe «| a | b |» = tabella, **grassetto**, riga vuota = nuovo paragrafo.
+     ===================================================================== */
+  const CHIAVE_STUDIO = 'flpit_studio';
+  const CHIAVE_PROG = 'flpit_studio_progressi';
+  const CHIAVE_CHECK = 'flpit_studio_checklist';
+  const leggiJson = (k, base) => { try { const d = JSON.parse(localStorage.getItem(k) || 'null'); return d && typeof d === 'object' ? d : base; } catch (e) { return base; } };
+  const scriviJson = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { toast('Impossibile salvare sul telefono'); return false; } };
+  let studio = leggiJson(CHIAVE_STUDIO, null);
+  let progressi = leggiJson(CHIAVE_PROG, {});   // { idScheda: { stato: 'imparata' | 'ripassare', data } }
+  let checklist = leggiJson(CHIAVE_CHECK, {});  // { idVoce: true }
+  let vistaStudio = { tipo: 'home' };           // home | argomento | ripasso
+  let cercaStudio = '';
+
+  const tutteSchede = () => (studio ? studio.argomenti.flatMap(a => a.schede.map(s => ({ ...s, argomento: a }))) : []);
+  const imparata = s => (progressi[s.id] || {}).stato === 'imparata';
+  const daRipassare = s => (progressi[s.id] || {}).stato === 'ripassare';
+  const contaImparate = schede => schede.filter(imparata).length;
+
+  function validaStudio(d) {
+    if (!d || d.tipo !== 'studio' || !Array.isArray(d.argomenti)) throw new Error('il file non è un materiale di studio.');
+    const ids = new Set();
+    d.argomenti.forEach((a, i) => {
+      if (!a || !a.titolo || !Array.isArray(a.schede)) throw new Error(`argomento ${i + 1} incompleto.`);
+      a.id = String(a.id || `arg${i + 1}`);
+      a.schede.forEach((s, j) => {
+        if (!s || !s.titolo) throw new Error(`scheda ${j + 1} di «${a.titolo}» senza titolo.`);
+        s.id = String(s.id || `${a.id}-${j + 1}`);
+        if (ids.has(s.id)) throw new Error(`scheda ripetuta: ${s.id}.`);
+        ids.add(s.id);
+      });
+    });
+    d.checklist = Array.isArray(d.checklist) ? d.checklist.map((c, i) => ({ id: String(c.id || `c${i + 1}`), testo: String(c.testo || c) })) : [];
+    return d;
+  }
+  function importaStudio(testo) {
+    let d;
+    try { d = JSON.parse(testo); } catch (e) { throw new Error('il file non è un .json valido.'); }
+    studio = validaStudio(d);
+    scriviJson(CHIAVE_STUDIO, studio);
+    vistaStudio = { tipo: 'home' };
+    return tutteSchede().length;
+  }
+  function segnaScheda(id, stato) {
+    if (stato) progressi[id] = { stato, data: oggiIso() }; else delete progressi[id];
+    scriviJson(CHIAVE_PROG, progressi);
+  }
+
+  // Testo semplice → HTML sicuro (si parte sempre da esc()).
+  function formatta(testo) {
+    const grassetto = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    const blocchi = [];
+    let elenco = null, tabella = null, para = [];
+    const chiudi = () => {
+      if (para.length) { blocchi.push(`<p>${para.map(grassetto).join('<br>')}</p>`); para = []; }
+      if (elenco) { blocchi.push(`<ul>${elenco.map(x => `<li>${grassetto(x)}</li>`).join('')}</ul>`); elenco = null; }
+      if (tabella) {
+        const celle = r => r.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+        const righeT = tabella.filter(r => !/^\|[\s\-:|]+\|$/.test(r)).map(celle);
+        const testa = righeT[0], corpo = righeT.slice(1);
+        blocchi.push(`<div class="tabella"><table><thead><tr>${testa.map(c => `<th>${grassetto(c)}</th>`).join('')}</tr></thead><tbody>${corpo.map(r => `<tr>${r.map(c => `<td>${grassetto(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+        tabella = null;
+      }
+    };
+    String(testo || '').split('\n').forEach(riga => {
+      const t = riga.trim();
+      if (!t) { chiudi(); return; }
+      if (/^\|.*\|$/.test(t)) { if (!tabella) { chiudi(); tabella = []; } tabella.push(t); return; }
+      if (/^[-•] /.test(t)) { if (!elenco) { chiudi(); elenco = []; } elenco.push(t.slice(2)); return; }
+      if (elenco || tabella) chiudi();
+      para.push(t);
+    });
+    chiudi();
+    return blocchi.join('');
+  }
+
+  // Ordine del ripasso: prima quelle segnate «da ripassare», poi le mai viste; se sono tutte imparate, ripasso generale.
+  function codaRipasso(idArgomento) {
+    const schede = tutteSchede().filter(s => !idArgomento || s.argomento.id === idArgomento);
+    const nonImparate = [...schede.filter(daRipassare), ...schede.filter(s => !progressi[s.id])];
+    return (nonImparate.length ? nonImparate : schede).map(s => s.id);
+  }
+  const schedaPerId = id => tutteSchede().find(s => s.id === id);
+
+  // Visite di oggi e domani ancora da fare (per il promemoria in «Da fare»).
+  function visiteVicine() {
+    const giorni = [oggiIso(), traGiorni(1)];
+    return clienti.filter(aperto).filter(c => c.appuntamenti.some(a => !a.fatto && a.tipo === 'incontro' && giorni.includes(a.data))).length;
+  }
+  function promemoriaStudio() {
+    if (!studio) return null;
+    const n = visiteVicine();
+    const restano = tutteSchede().filter(s => !imparata(s)).length;
+    if (!n || !restano) return null;
+    return `${n === 1 ? '1 visita' : n + ' visite'} tra oggi e domani · ${restano === 1 ? '1 scheda' : restano + ' schede'} da ripassare`;
+  }
+
+  function cartaScheda(s, conArgomento) {
+    const fatta = imparata(s), ripassa = daRipassare(s);
+    return `<article class="studio-scheda" id="scheda-${esc(s.id)}">
+      ${conArgomento ? `<p class="studio-arg">${esc(s.argomento.titolo)}</p>` : ''}
+      <h4>${esc(s.titolo)}</h4>
+      <div class="testo-studio">${formatta(s.testo)}</div>
+      <div class="studio-piede">
+        <button type="button" class="studio-segna" data-studio-segna="${esc(s.id)}" aria-pressed="${fatta}">
+          <span class="spunta" aria-pressed="${fatta}">${ICONA('spunta')}</span><span>${fatta ? 'Imparata' : 'Segna come imparata'}</span>
+        </button>
+        ${ripassa ? '<span class="etichetta-ripassare">Da ripassare</span>' : ''}
+      </div>
+    </article>`;
+  }
+
+  function disegnaStudio() {
+    const box = $('#studio');
+    $('#testata-studio').hidden = vistaStudio.tipo !== 'home';
+    if (!studio) {
+      $('#testata-studio').hidden = false;
+      $('#sub-studio').textContent = 'Nessun materiale caricato';
+      box.innerHTML = `<div class="vuoto">${ICONA('studio')}<strong>Niente da studiare ancora</strong>Carica il file del materiale di studio: resta solo su questo telefono.</div>
+        <button type="button" class="btn-primario" data-studio="carica">Carica materiale di studio</button>`;
+      return;
+    }
+    const schede = tutteSchede();
+    const fatte = contaImparate(schede);
+
+    if (vistaStudio.tipo === 'argomento') {
+      const a = studio.argomenti.find(x => x.id === vistaStudio.id);
+      if (!a) { vistaStudio = { tipo: 'home' }; disegnaStudio(); return; }
+      const lista = a.schede.map(s => ({ ...s, argomento: a }));
+      box.innerHTML = `<header class="nav"><button type="button" class="btn-nav" data-studio="home">${ICONA('indietro')}<span>Studio</span></button></header>
+        <div class="scheda-testa"><h2>${esc(a.titolo)}</h2><p class="sottotitolo">${contaImparate(lista)} di ${lista.length} imparate</p></div>
+        ${a.intro ? `<div class="testo-studio intro">${formatta(a.intro)}</div>` : ''}
+        ${lista.map(s => cartaScheda(s)).join('')}
+        <button type="button" class="btn-secondario" data-studio="ripasso" data-arg="${esc(a.id)}">Ripassa questo argomento</button>`;
+      return;
+    }
+
+    if (vistaStudio.tipo === 'ripasso') {
+      const v = vistaStudio;
+      const testaR = `<header class="nav"><button type="button" class="btn-nav" data-studio="home">${ICONA('indietro')}<span>Fine</span></button><span class="salvataggio">${Math.min(v.i + 1, v.coda.length)} di ${v.coda.length}</span></header>
+        <div class="barra-progresso"><i style="width:${v.coda.length ? Math.round(v.i / v.coda.length * 100) : 100}%"></i></div>`;
+      if (v.i >= v.coda.length) {
+        box.innerHTML = testaR + `<div class="vuoto">${ICONA('spunta')}<strong>Ripasso finito</strong>${v.so} sapute, ${v.no} da ripassare.<br>In tutto ${fatte} di ${schede.length} schede imparate.</div>
+          ${v.no ? `<button type="button" class="btn-primario" data-studio="ripasso" data-arg="${esc(v.arg || '')}">Ripassa quelle da rivedere</button>` : ''}
+          <button type="button" class="btn-secondario" data-studio="home">Torna allo Studio</button>`;
+        return;
+      }
+      const s = schedaPerId(v.coda[v.i]);
+      if (!s) { v.i++; disegnaStudio(); return; }
+      box.innerHTML = testaR + `<article class="ripasso-carta">
+          <p class="studio-arg">${esc(s.argomento.titolo)}</p>
+          <h3 class="ripasso-domanda">${esc(s.domanda || s.titolo)}</h3>
+          ${v.mostra ? `<div class="testo-studio">${formatta(s.testo)}</div>` : ''}
+        </article>
+        ${v.mostra
+          ? `<div class="due-bottoni"><button type="button" class="btn-tenue" data-studio="risposta" data-esito="ripassare">Da ripassare</button><button type="button" class="btn-pieno" data-studio="risposta" data-esito="imparata">La so</button></div>`
+          : `<button type="button" class="btn-primario" data-studio="mostra">Mostra la risposta</button>`}`;
+      return;
+    }
+
+    // HOME
+    $('#sub-studio').textContent = `${fatte} di ${schede.length} schede imparate${studio.aggiornato ? ' · materiale del ' + dataIt(studio.aggiornato) : ''}`;
+    let html = `<input id="cerca-studio" class="ricerca" type="search" placeholder="Cerca: prezzo, spedizione, garanzia…" autocomplete="off" value="${esc(cercaStudio)}">`;
+    const q = cercaStudio.trim().toLowerCase();
+    if (q) {
+      const parole = q.split(/\s+/);
+      const trovate = schede.filter(s => { const t = `${s.titolo} ${s.domanda || ''} ${s.testo || ''} ${s.argomento.titolo}`.toLowerCase(); return parole.every(p => t.includes(p)); });
+      html += trovate.length ? trovate.map(s => cartaScheda(s, true)).join('') : `<div class="vuoto piccolo">Nessuna scheda contiene «${esc(cercaStudio.trim())}».</div>`;
+      box.innerHTML = html;
+      return;
+    }
+    const restano = schede.filter(s => !imparata(s)).length;
+    html += `<div class="barra-progresso grande"><i style="width:${schede.length ? Math.round(fatte / schede.length * 100) : 0}%"></i></div>
+      <button type="button" class="btn-primario" data-studio="ripasso">${restano ? `Ripassa · ${restano} ${restano === 1 ? 'scheda' : 'schede'}` : 'Ripasso generale'}</button>`;
+    if (studio.checklist.length) {
+      const nFatte = studio.checklist.filter(c => checklist[c.id]).length;
+      html += `<h3 class="titolo-gruppo con-azione">Prima della visita · ${nFatte}/${studio.checklist.length}${nFatte ? '<button type="button" class="btn-link" data-studio="azzera">Azzera</button>' : ''}</h3>
+        <div class="gruppo">${studio.checklist.map(c => `<button type="button" class="riga" data-check="${esc(c.id)}">
+          <span class="spunta" aria-pressed="${!!checklist[c.id]}">${ICONA('spunta')}</span>
+          <span class="riga-testo"><small class="a-capo voce-check${checklist[c.id] ? ' fatta' : ''}">${esc(c.testo)}</small></span></button>`).join('')}</div>`;
+    }
+    html += `<h3 class="titolo-gruppo">Argomenti</h3><div class="gruppo">${studio.argomenti.map(a => {
+      const lista = a.schede.map(s => ({ ...s, argomento: a }));
+      const f = contaImparate(lista), r = lista.filter(daRipassare).length;
+      return `<button type="button" class="riga" data-studio="argomento" data-arg="${esc(a.id)}">
+        <span class="riga-testo"><span>${esc(a.titolo)}</span><small>${f} di ${lista.length} imparate${r ? ` · ${r} da ripassare` : ''}</small></span>
+        ${f === lista.length && lista.length ? `<span class="segno-ok">${ICONA('spunta')}</span>` : ''}${CHEV}</button>`;
+    }).join('')}</div>`;
+    box.innerHTML = html;
+  }
+
+  function apriFileStudio() { $('#file-studio').click(); }
+
+  /* =====================================================================
      DATI
      ===================================================================== */
   function disegnaDati() {
@@ -454,6 +655,9 @@
     $('#sub-dati').textContent = `${clienti.length} clienti · ${nApp} appuntamenti`;
     $('#info-dati').textContent = `I dati sono salvati solo su questo telefono. ${ultimo ? 'Ultimo export: ' + dataOraIt(ultimo) + '.' : 'Non hai ancora esportato nulla.'} Salva un backup ogni pochi giorni in File o iCloud Drive.`;
     $$('[data-imp]').forEach(el => { if (document.activeElement !== el) el.value = imp[el.dataset.imp] || ''; });
+    $('#info-studio').textContent = studio
+      ? `${studio.titolo || 'Materiale'}${studio.aggiornato ? ' del ' + dataIt(studio.aggiornato) : ''} · ${tutteSchede().length} schede · tocca per sostituirlo`
+      : 'File .json preparato per te';
   }
 
   // Nomi che dipendono dalle Impostazioni (referente del fornitore, commissione).
@@ -1129,7 +1333,7 @@
       { name: 'Appuntamenti', rows: [COL_APP.map(c => c.t), ...righeApp()], widths: COL_APP.map(c => c.w) }
     ]);
   }
-  const creaBackup = () => new Blob([JSON.stringify({ app: 'FLPIT Clienti', versione: VERSIONE_DATI, esportato: new Date().toISOString(), impostazioni: imp, clienti }, null, 1)], { type: 'application/json' });
+  const creaBackup = () => new Blob([JSON.stringify({ app: 'FLPIT Clienti', versione: VERSIONE_DATI, esportato: new Date().toISOString(), impostazioni: imp, clienti, studio, studioProgressi: progressi }, null, 1)], { type: 'application/json' });
 
   function scarica(blob, nomeFile) {
     const url = URL.createObjectURL(blob);
@@ -1173,6 +1377,12 @@
       CAMPI_IMP.forEach(k => { if (d.impostazioni[k]) imp[k] = String(d.impostazioni[k]); });
       salvaImp(); applicaNomi();
     }
+    // materiale di studio e progressi: il materiale solo se qui manca, i progressi si uniscono (vince il più recente)
+    if (d && d.studio && !studio) { try { studio = validaStudio(d.studio); scriviJson(CHIAVE_STUDIO, studio); } catch (e) {} }
+    if (d && d.studioProgressi && typeof d.studioProgressi === 'object') {
+      Object.entries(d.studioProgressi).forEach(([k, v]) => { if (v && (!progressi[k] || (v.data || '') > (progressi[k].data || ''))) progressi[k] = v; });
+      scriviJson(CHIAVE_PROG, progressi);
+    }
     let aggiunti = 0, sostituiti = 0;
     arrivati.forEach(c => {
       const i = clienti.findIndex(x => x.id === c.id);
@@ -1214,6 +1424,53 @@
   });
 
   $('#btn-ripristina').addEventListener('click', () => $('#file-import').click());
+
+  // Studio
+  $('#btn-studio').addEventListener('click', apriFileStudio);
+  $('#file-studio').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const n = importaStudio(await file.text());
+      toast(`Materiale caricato: ${n} schede`);
+      vai('studio');
+    } catch (err) { alert('Caricamento non riuscito: ' + err.message); }
+  });
+  $('#studio').addEventListener('input', e => {
+    if (e.target.id !== 'cerca-studio') return;
+    cercaStudio = e.target.value;
+    const pos = e.target.selectionStart;
+    disegnaStudio();
+    const c = $('#cerca-studio'); c.focus(); try { c.setSelectionRange(pos, pos); } catch (er) {}
+  });
+  $('#studio').addEventListener('click', e => {
+    const ck = e.target.closest('[data-check]');
+    if (ck) { const id = ck.dataset.check; if (checklist[id]) delete checklist[id]; else checklist[id] = true; scriviJson(CHIAVE_CHECK, checklist); disegnaStudio(); return; }
+    const sg = e.target.closest('[data-studio-segna]');
+    if (sg) {
+      const id = sg.dataset.studioSegna;
+      segnaScheda(id, imparata({ id }) ? null : 'imparata');
+      const y = window.scrollY; disegnaStudio(); window.scrollTo(0, y);
+      return;
+    }
+    const b = e.target.closest('[data-studio]');
+    if (!b) return;
+    const az = b.dataset.studio;
+    if (az === 'carica') { apriFileStudio(); return; }
+    if (az === 'home') vistaStudio = { tipo: 'home' };
+    else if (az === 'argomento') vistaStudio = { tipo: 'argomento', id: b.dataset.arg };
+    else if (az === 'ripasso') vistaStudio = { tipo: 'ripasso', arg: b.dataset.arg || '', coda: codaRipasso(b.dataset.arg || ''), i: 0, so: 0, no: 0, mostra: false };
+    else if (az === 'mostra') vistaStudio.mostra = true;
+    else if (az === 'risposta') {
+      const v = vistaStudio;
+      segnaScheda(v.coda[v.i], b.dataset.esito);
+      if (b.dataset.esito === 'imparata') v.so++; else v.no++;
+      v.i++; v.mostra = false;
+    } else if (az === 'azzera') { checklist = {}; scriviJson(CHIAVE_CHECK, checklist); }
+    disegnaStudio();
+    if (az !== 'mostra' && az !== 'azzera') window.scrollTo(0, 0);
+  });
   $('#file-import').addEventListener('change', async e => {
     const file = e.target.files[0];
     e.target.value = '';
@@ -1372,5 +1629,5 @@
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 
   // Per i test automatici
-  window.__flpit = { creaCsv, creaXlsx, creaBackup, importaBackup, migraV1, CONTROLLI, pivaValida, testoRegistrazione, testoFattura, get clienti() { return clienti; } };
+  window.__flpit = { creaCsv, creaXlsx, creaBackup, importaBackup, migraV1, CONTROLLI, pivaValida, testoRegistrazione, testoFattura, importaStudio, formatta, codaRipasso, get clienti() { return clienti; }, get studio() { return studio; }, get progressi() { return progressi; } };
 })();
